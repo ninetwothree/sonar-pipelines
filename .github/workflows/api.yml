@@ -4,17 +4,17 @@ on:
       SONAR_TOKEN:
         description: 'Token for SonarQube authentication'
         required: true
-  inputs:
-      SONAR_DOMAIN_NAME:
-          description: 'Domain name of the SonarQube server'
-          required: true
-      FETCH_DEPTH:
-          required: false
-          default: 0
-      RUN_ESLINT:
-          description: 'Flag to determine if ESLint should run'
-          required: false
-          default: true
+    inputs:
+        SONAR_DOMAIN_NAME:
+            description: 'Domain name of the SonarQube server'
+            required: true
+        FETCH_DEPTH:
+            required: false
+            default: 0
+        RUN_ESLINT:
+            description: 'Flag to determine if ESLint should run'
+            required: false
+            default: true
         
 name: Scan project with SonarQube scanner
 jobs:
