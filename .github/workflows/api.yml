@@ -34,7 +34,7 @@ jobs:
         printf "\nsonar.projectKey = ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.head_ref || github.ref_name }}" | sed s/'\/'/'-'/g >> sonar-project.properties
     
     - name: Check with eslint
-      if: ${{ inputs.RUN_ESLINT == 'true' }}
+      if: ${{ inputs.RUN_ESLINT }}
       run: |
         npm install
         bash -c 'npm run lint-exporter || :'
