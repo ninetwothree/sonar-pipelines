@@ -8,13 +8,17 @@ on:
         SONAR_DOMAIN_NAME:
             description: 'Domain name of the SonarQube server'
             required: true
+            type: string
         FETCH_DEPTH:
             required: false
             default: 0
+            type: number
         RUN_ESLINT:
             description: 'Flag to determine if ESLint should run'
             required: false
             default: true
+            type: boolean
+
         
 name: Scan project with SonarQube scanner
 jobs:
