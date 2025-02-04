@@ -1,0 +1,61 @@
+on:
+  workflow_call: 
+    secrets:
+      SONAR_TOKEN:
+        description: 'Token for SonarQube authentication'
+        required: true
+  inputs:
+      SONAR_DOMAIN_NAME:
+          description: 'Domain name of the SonarQube server'
+          required: false
+          default: 'sonarqube.ninetwothree.co' 
+      FETCH_DEPTH:
+          required: false
+          default: 0
+      RUN_ESLINT:
+          description: 'Flag to determine if ESLint should run'
+          required: false
+          default: true
+        
+name: Scan project with SonarQube scanner
+jobs:
+  run-sonar-checks:
+    name: Run sonar checks
+    runs-on: ubuntu-24.04
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: ${{ inputs.FETCH_DEPTH }}  
+    - name: Generate sonar project name
+      run: |
+        printf "\nsonar.projectKey = ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.head_ref || github.ref_name }}" | sed s/'\/'/'-'/g >> sonar-project.properties
+    
+    - name: Check with eslint
+      if: ${{ inputs.RUN_ESLINT == 'true' }}
+      run: |
+        npm install
+        bash -c 'npm run lint-exporter || :'
+    
+    - name: SonarQube Scan
+      uses: sonarsource/sonarqube-scan-action@v4.2.1
+      with:
+        args: >
+          -Dhttp.proxyPort=3129
+          -Dhttps.proxyPort=3129
+          -Dhttp.proxyHost=${{ inputs.SONAR_DOMAIN_NAME }}
+          -Dhttps.proxyHost=${{ inputs.SONAR_DOMAIN_NAME }}
+      env:
+        HTTP_PROXY: https://${{ inputs.SONAR_DOMAIN_NAME }}:3129
+        HTTPS_PROXY: https://${{ inputs.SONAR_DOMAIN_NAME }}:3129
+        NO_PROXY: localhost,127.0.0.1
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        SONAR_HOST_URL: https://${{ inputs.SONAR_DOMAIN_NAME }}
+
+    - name: SonarQube Quality Gate check
+      id: sonarqube-quality-gate-check
+      uses: sonarsource/sonarqube-quality-gate-action@v1.1.0
+      timeout-minutes: 5
+      env:
+       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+       SONAR_HOST_URL: https://${{ inputs.SONAR_DOMAIN_NAME }}
+  
