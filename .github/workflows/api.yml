@@ -7,8 +7,7 @@ on:
   inputs:
       SONAR_DOMAIN_NAME:
           description: 'Domain name of the SonarQube server'
-          required: false
-          default: 'sonarqube.ninetwothree.co' 
+          required: true
       FETCH_DEPTH:
           required: false
           default: 0
@@ -58,4 +57,3 @@ jobs:
       env:
        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
        SONAR_HOST_URL: https://${{ inputs.SONAR_DOMAIN_NAME }}
-  
