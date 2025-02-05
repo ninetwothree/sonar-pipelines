@@ -13,11 +13,6 @@ on:
           required: false
           default: 0
           type: number
-      RUN_ESLINT:
-          description: 'Flag to determine if ESLint should run'
-          required: false
-          default: true
-          type: boolean
       RUN_PRECOMMIT:
           description: 'Flag to determine if precommit should run'
           required: false
