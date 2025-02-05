@@ -5,34 +5,34 @@ on:
         description: 'Token for SonarQube authentication'
         required: true
     inputs:
-        SONAR_DOMAIN_NAME:
-            description: 'Domain name of the SonarQube server'
-            required: true
-            type: string
-        FETCH_DEPTH:
-            required: false
-            default: 0
-            type: number
-        RUN_ESLINT:
-            description: 'Flag to determine if ESLint should run'
-            required: false
-            default: true
-            type: boolean
-        RUN_PRECOMMIT:
-            description: 'Flag to determine if precommit should run'
-            required: false
-            default: true
-            type: boolean
-        RUN_CFN_LINT:
-            description: 'Flag to determine if cfnlint should run'
-            required: false
-            default: true
-            type: boolean
-        RUN_TF_LINT:
-            description: 'Flag to determine if tflint should run'
-            required: false
-            default: true
-            type: boolean
+      SONAR_DOMAIN_NAME:
+          description: 'Domain name of the SonarQube server'
+          required: true
+          type: string
+      FETCH_DEPTH:
+          required: false
+          default: 0
+          type: number
+      RUN_ESLINT:
+          description: 'Flag to determine if ESLint should run'
+          required: false
+          default: true
+          type: boolean
+      RUN_PRECOMMIT:
+          description: 'Flag to determine if precommit should run'
+          required: false
+          default: true
+          type: boolean
+      RUN_CFN_LINT:
+          description: 'Flag to determine if cfnlint should run'
+          required: false
+          default: true
+          type: boolean
+      RUN_TF_LINT:
+          description: 'Flag to determine if tflint should run'
+          required: false
+          default: true
+          type: boolean
 
 name: Scan project with SonarQube scanner
 jobs:
