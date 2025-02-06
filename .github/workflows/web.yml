@@ -31,7 +31,7 @@ on:
       RUN_STYLELINT_EXPORTER:
         description: 'Flag to determine if npm run stylelint-exporter should be executed'
         required: false
-        default: false
+        default: true
         type: boolean
 
 name: Scan project with SonarQube scanner
