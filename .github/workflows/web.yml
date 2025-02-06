@@ -13,11 +13,6 @@ on:
           required: false
           default: 0
           type: number
-      RUN_ESLINT:
-          description: 'Flag to determine if ESLint should run'
-          required: false
-          default: true
-          type: boolean
       ENABLE_COREPACK:
           description: 'Flag to determine if corepack should be enabled'
           required: false
@@ -28,6 +23,16 @@ on:
           required: false
           default: '20.12.2'
           type: string
+      RUN_LINT_EXPORTER:
+        description: 'Flag to determine if npm run lint-exporter should be executed'
+        required: false
+        default: true
+        type: boolean
+      RUN_STYLELINT_EXPORTER:
+        description: 'Flag to determine if npm run stylelint-exporter should be executed'
+        required: false
+        default: false
+        type: boolean
 
 name: Scan project with SonarQube scanner
 jobs:
@@ -48,15 +53,23 @@ jobs:
       with:
         node-version: ${{ inputs.NODE_VERSION }}
     
-
     - name: Enable Corepack
       if: ${{ inputs.ENABLE_COREPACK }}
       run: corepack enable    
     
-    - name: Check with eslint
+    - name: Install packages
+      if: ${{ inputs.RUN_LINT_EXPORTER || inputs.RUN_STYLELINT_EXPORTER }}
       run: |
         yarn
+    
+    - name: Get lint-exporter report
+      if: ${{ inputs.RUN_LINT_EXPORTER }}
+      run: |
         bash -c 'npm run lint-exporter || :'
+    
+    - name: Get stylelint-exporter report
+      if: ${{ inputs.RUN_STYLELINT_EXPORTER }}
+      run: |
         bash -c 'npm run stylelint-exporter || :'
     
     - name: SonarQube Scan
