@@ -18,6 +18,11 @@ on:
           required: false
           default: true
           type: boolean
+      ENABLE_COREPACK:
+          description: 'Flag to determine if corepack should be enabled'
+          required: false
+          default: false
+          type: boolean
       NODE_VERSION:
           description: 'Node version to run (example: 20.12.2)'
           required: false
@@ -42,6 +47,11 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: ${{ inputs.NODE_VERSION }}
+    
+
+    - name: Enable Corepack
+      if: ${{ inputs.ENABLE_COREPACK }}
+      run: corepack enable    
     
     - name: Check with eslint
       run: |
