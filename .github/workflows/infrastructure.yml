@@ -42,9 +42,6 @@ jobs:
       with:
         fetch-depth: ${{ inputs.FETCH_DEPTH }}  
           
-    - name: Install Git
-      run: |
-        apt-get update && apt-get install -y git
     
     - name: Configure Git Safe Directory
       run: git config --global --add safe.directory /__w/${{ github.event.repository.name }}/${{ github.event.repository.name }}
