@@ -47,8 +47,11 @@ jobs:
         apt-get update && apt-get install -y git
     
     - name: Configure Git Safe Directory
-      run: git config --global --add safe.directory /__w/${{ github.repository_owner }}-${{ github.event.repository.name }}/${{ github.repository_owner }}-${{ github.event.repository.name }}
-  
+      run: git config --global --add safe.directory /__w/${{ github.event.repository.name }}/${{ github.event.repository.name }}
+    
+    - name: Verify Git Repository
+      run: git status
+
     - name: Run Pre-Commit Hooks
       run: pre-commit run -a
   run-sonar-checks:
