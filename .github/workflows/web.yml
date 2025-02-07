@@ -57,11 +57,20 @@ jobs:
       if: ${{ inputs.ENABLE_COREPACK }}
       run: corepack enable    
     
-    - name: Install packages
+    - name: Install packages based on lock-file
       if: ${{ inputs.RUN_LINT_EXPORTER || inputs.RUN_STYLELINT_EXPORTER }}
       run: |
-        yarn
-    
+        if [ -f yarn.lock ]; then
+          echo "Detected yarn.lock, using Yarn"
+          yarn
+        elif [ -f package-lock.json ]; then
+          echo "Detected package-lock.json, using npm"
+          npm install
+        else
+          echo "No lock file found. Defaulting to yarn."
+          yarn
+        fi
+      
     - name: Get lint-exporter report
       if: ${{ inputs.RUN_LINT_EXPORTER }}
       run: |
