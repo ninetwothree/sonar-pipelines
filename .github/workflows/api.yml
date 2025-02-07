@@ -18,6 +18,11 @@ on:
           required: false
           default: true
           type: boolean
+      NPM_CONFIG_LEGACY_PEER_DEPS:
+          description: 'Flag to determine if --legacy-peer-deps should be added for install'
+          required: false
+          default: false
+          type: boolean
 
         
 name: Scan project with SonarQube scanner
@@ -35,6 +40,8 @@ jobs:
     
     - name: Check with eslint
       if: ${{ inputs.RUN_ESLINT }}
+      env:
+        NPM_CONFIG_LEGACY_PEER_DEPS: ${{ inputs.NPM_CONFIG_LEGACY_PEER_DEPS }}
       run: |
         npm install
         bash -c 'npm run lint-exporter || :'
