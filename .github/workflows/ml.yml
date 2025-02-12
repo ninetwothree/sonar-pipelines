@@ -20,7 +20,7 @@ on:
           type: string
           default: '3.11'
       RUN_FLAKE8:
-          desctiption: 'Flag to determine if flake8 report is needed'
+          description: 'Flag to determine if flake8 report is needed'
           required: false
           type: boolean
           default: false
