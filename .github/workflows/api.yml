@@ -76,7 +76,7 @@ jobs:
       env:
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       run: |
-        PROJECT_KEY=${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.head_ref || github.ref_name }}" | sed s/'\/'/'-'/g
+        PROJECT_KEY=$(echo "${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.head_ref || github.ref_name }}" | sed 's/\//-/g')
         curl -s -u $SONAR_TOKEN: "https://${{ vars.SONAR_DOMAIN_NAME }}/api/issues/search?componentKeys=${PROJECT_KEY}&resolved=no&ps=500" > sonar_issues.json
 
         echo "### Detailed SonarQube Issues" >> $GITHUB_STEP_SUMMARY
