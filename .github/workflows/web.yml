@@ -98,8 +98,26 @@ jobs:
     
     - name: SonarQube Quality Gate check
       id: sonarqube-quality-gate-check
+      continue-on-error: true
       uses: sonarsource/sonarqube-quality-gate-action@v1.1.0
       timeout-minutes: 5
       env:
        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
        SONAR_HOST_URL: https://${{ inputs.SONAR_DOMAIN_NAME }}
+    
+    - name: Get detailed SonarQube issues
+      if: steps.sonarqube-quality-gate-check.outcome == 'failure'
+      continue-on-error: false 
+      env:
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      run: |
+        PROJECT_KEY=$(echo "${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.head_ref || github.ref_name }}" | sed 's/\//-/g')
+        curl -s -u $SONAR_TOKEN: "https://${{ vars.SONAR_DOMAIN_NAME }}/api/issues/search?componentKeys=${PROJECT_KEY}&resolved=no&ps=500" > sonar_issues.json
+        echo "### Detailed SonarQube Issues" >> $GITHUB_STEP_SUMMARY
+        echo "File | Line | Error type | Description" >> $GITHUB_STEP_SUMMARY
+        echo "--- | --- | --- | ---" >> $GITHUB_STEP_SUMMARY
+        jq -r '.issues[] | "\(.component) | \(.line) | \(.severity) | \(.message)"' sonar_issues.json | tee sonar_issues_summary.txt | tee -a $GITHUB_STEP_SUMMARY
+      
+        echo "Detailed issues summary:"
+        cat sonar_issues_summary.txt
+        exit 1
