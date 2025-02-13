@@ -72,17 +72,13 @@ jobs:
     
     - name: Get detailed SonarQube issues
       if: steps.sonarqube-quality-gate-check.outcome == 'failure'
-      continue-on-error: true 
+      continue-on-error: false 
       env:
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       run: |
         PROJECT_KEY=$(echo "${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.head_ref || github.ref_name }}" | sed 's/\//-/g')
         curl -s -u $SONAR_TOKEN: "https://${{ vars.SONAR_DOMAIN_NAME }}/api/issues/search?componentKeys=${PROJECT_KEY}&resolved=no&ps=500" > sonar_issues.json
 
-        echo "### Detailed SonarQube Issues" >> $GITHUB_STEP_SUMMARY
-        echo "File | Error type | Description" >> $GITHUB_STEP_SUMMARY
-        echo "--- | --- | ---" >> $GITHUB_STEP_SUMMARY
-        jq -r '.issues[] | "\(.component) | \(.severity) | \(.message)"' sonar_issues.json | tee sonar_issues_summary.txt | tee -a $GITHUB_STEP_SUMMARY
-
-        echo "Detailed issues summary:"
-        cat sonar_issues_summary.txt
+        echo "Detailed SonarQube Issues:"
+        jq -r '.issues[] | "\(.component) | \(.severity) | \(.message)"' sonar_issues.json | tee sonar_issues_summary.txt
+        exit 1
