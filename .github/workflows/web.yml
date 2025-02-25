@@ -113,6 +113,28 @@ jobs:
       run: |
         PROJECT_KEY=$(echo "${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.head_ref || github.ref_name }}" | sed 's/\//-/g')
         curl -s -u $SONAR_TOKEN: "https://${{ vars.SONAR_DOMAIN_NAME }}/api/issues/search?componentKeys=${PROJECT_KEY}&resolved=no&ps=500" > sonar_issues.json
+        
+        total=$(jq -r '.total' sonar_issues.json)
+
+        if [ "$total" -eq 0 ]; then
+          echo "Quality Gate Check failed!"
+          echo ""
+          echo "Quality Gate exception list:"
+          conditions_json=$(curl -s -u $SONAR_TOKEN: "https://${{ vars.SONAR_DOMAIN_NAME }}/api/qualitygates/project_status?projectKey=$PROJECT_KEY")
+
+          echo "### Quality Gate Check failed!" >> $GITHUB_STEP_SUMMARY
+          echo "#### Quality Gate exception list::" >> $GITHUB_STEP_SUMMARY
+          echo "Metric | Actual Value | Comparator | Error Threshold" >> $GITHUB_STEP_SUMMARY
+          echo "--- | --- | --- | ---" >> $GITHUB_STEP_SUMMARY
+
+          echo "$conditions_json" | jq -r '
+            .projectStatus.conditions[]
+            | select(.status == "ERROR")
+            | "\(.metricKey) | \(.actualValue) | \(.comparator) | \(.errorThreshold)"
+          ' >> $GITHUB_STEP_SUMMARY
+          exit 1
+        fi
+
         echo "### Detailed SonarQube Issues" >> $GITHUB_STEP_SUMMARY
         echo "File | Line | Error type | Description" >> $GITHUB_STEP_SUMMARY
         echo "--- | --- | --- | ---" >> $GITHUB_STEP_SUMMARY
