@@ -53,6 +53,7 @@ jobs:
           -Dhttps.proxyPort=3129
           -Dhttp.proxyHost=${{ inputs.SONAR_DOMAIN_NAME }}
           -Dhttps.proxyHost=${{ inputs.SONAR_DOMAIN_NAME }}
+          -Dsonar.scm.disabled=true
       env:
         HTTP_PROXY: https://${{ inputs.SONAR_DOMAIN_NAME }}:3129
         HTTPS_PROXY: https://${{ inputs.SONAR_DOMAIN_NAME }}:3129
@@ -68,6 +69,7 @@ jobs:
       env:
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         SONAR_HOST_URL: https://${{ inputs.SONAR_DOMAIN_NAME }}
+        SONAR_SCANNER_JAVA_OPTS: -Xms512m -Xmx2048m
 
     - name: Get detailed SonarQube issues
       if: steps.sonarqube-quality-gate-check.outcome == 'failure'
