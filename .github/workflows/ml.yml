@@ -1,0 +1,120 @@
+on:
+  workflow_dispatch:
+  workflow_call: 
+    secrets:
+      SONAR_TOKEN:
+        description: 'Token for SonarQube authentication'
+        required: true
+    inputs:
+      SONAR_DOMAIN_NAME:
+          description: 'Domain name of the SonarQube server'
+          required: true
+          type: string
+      FETCH_DEPTH:
+          required: false
+          default: 0
+          type: number
+      PYTHON_VERSION:
+          description: 'Python version to be used in report generation'
+          required: false
+          type: string
+          default: '3.11'
+      RUN_FLAKE8:
+          description: 'Flag to determine if flake8 report is needed'
+          required: false
+          type: boolean
+          default: false
+
+name: Scan project with SonarQube scanner
+jobs:
+  build:
+    name: Run checks
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: ${{ inputs.FETCH_DEPTH }}  
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ inputs.PYTHON_VERSION }}
+
+    - name: Install dependencies
+      if: ${{ inputs.RUN_FLAKE8 }}
+      run: |
+        python -m pip install --upgrade pip
+        pip install poetry
+        poetry install
+    
+    - name: Run Flake8 and generate report
+      if: ${{ inputs.RUN_FLAKE8 }}
+      run: |
+        poetry run flake8 src --format=json --output-file=flake8-report.json --ignore E501 || true   
+    
+    - name: Generate sonar project name
+      run: |
+        printf "\nsonar.projectKey = ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.head_ref || github.ref_name }}" | sed s/'\/'/'-'/g >> sonar-project.properties
+    
+    - name: SonarQube Scan
+      uses: sonarsource/sonarqube-scan-action@v4.2.1
+      with:
+        args: >
+          -Dhttp.proxyPort=3129
+          -Dhttps.proxyPort=3129
+          -Dhttp.proxyHost=${{ inputs.SONAR_DOMAIN_NAME }}
+          -Dhttps.proxyHost=${{ inputs.SONAR_DOMAIN_NAME }}
+      env:
+        HTTP_PROXY: https://${{ inputs.SONAR_DOMAIN_NAME }}:3129
+        HTTPS_PROXY: https://${{ inputs.SONAR_DOMAIN_NAME }}:3129
+        NO_PROXY: localhost,127.0.0.1
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        SONAR_HOST_URL: https://${{ inputs.SONAR_DOMAIN_NAME }}
+
+    - name: SonarQube Quality Gate check
+      id: sonarqube-quality-gate-check
+      continue-on-error: true
+      uses: sonarsource/sonarqube-quality-gate-action@v1.1.0
+      timeout-minutes: 5
+      env:
+       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+       SONAR_HOST_URL: https://${{ inputs.SONAR_DOMAIN_NAME }}
+    
+    - name: Get detailed SonarQube issues
+      if: steps.sonarqube-quality-gate-check.outcome == 'failure'
+      continue-on-error: false 
+      env:
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      run: |
+        PROJECT_KEY=$(echo "${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.head_ref || github.ref_name }}" | sed 's/\//-/g')
+        curl -s -u $SONAR_TOKEN: "https://${{ vars.SONAR_DOMAIN_NAME }}/api/issues/search?componentKeys=${PROJECT_KEY}&resolved=no&ps=500" > sonar_issues.json
+        
+        total=$(jq -r '.total' sonar_issues.json)
+
+        if [ "$total" -eq 0 ]; then
+          echo "Quality Gate Check failed!"
+          echo ""
+          echo "Quality Gate exception list:"
+          conditions_json=$(curl -s -u $SONAR_TOKEN: "https://${{ vars.SONAR_DOMAIN_NAME }}/api/qualitygates/project_status?projectKey=$PROJECT_KEY")
+
+          echo "### Quality Gate Check failed!" >> $GITHUB_STEP_SUMMARY
+          echo "#### Quality Gate exception list::" >> $GITHUB_STEP_SUMMARY
+          echo "Metric | Actual Value | Comparator | Error Threshold" >> $GITHUB_STEP_SUMMARY
+          echo "--- | --- | --- | ---" >> $GITHUB_STEP_SUMMARY
+
+          echo "$conditions_json" | jq -r '
+            .projectStatus.conditions[]
+            | select(.status == "ERROR")
+            | "\(.metricKey) | \(.actualValue) | \(.comparator) | \(.errorThreshold)"
+          ' >> $GITHUB_STEP_SUMMARY
+          exit 1
+        fi
+        
+        echo "### Detailed SonarQube Issues" >> $GITHUB_STEP_SUMMARY
+        echo "File | Line | Error type | Description" >> $GITHUB_STEP_SUMMARY
+        echo "--- | --- | --- | ---" >> $GITHUB_STEP_SUMMARY
+        jq -r '.issues[] | "\(.component) | \(.line) | \(.severity) | \(.message)"' sonar_issues.json | tee sonar_issues_summary.txt | tee -a $GITHUB_STEP_SUMMARY
+      
+        echo "Detailed issues summary:"
+        cat sonar_issues_summary.txt
+        exit 1
