@@ -22,7 +22,7 @@ on:
 name: Scan project with SonarQube scanner
 jobs:
   sonar-scan:
-    runs-on: self-hosted
+    runs-on: macos-latest
     env:
       GIT_LFS_PATH: ${{ inputs.GIT_LFS_PATH }}
     steps:  
