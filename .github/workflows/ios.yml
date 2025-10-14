@@ -22,27 +22,28 @@ on:
 name: Scan project with SonarQube scanner
 jobs:
   sonar-scan:
-    runs-on: macos-latest
-    env:
-      GIT_LFS_PATH: ${{ inputs.GIT_LFS_PATH }}
-    steps:  
-    - name: Configure environment
-      run: |
-        echo "${GIT_LFS_PATH}" >> $GITHUB_PATH
+    runs-on: ubuntu-latest
+    steps:
     - name: Set up Git LFS
       run: |
-        # Install git-lfs
-        /opt/homebrew/bin/git-lfs install
+        git lfs install
     - uses: actions/checkout@v4
       with:
         fetch-depth: ${{ inputs.FETCH_DEPTH }}
         lfs: true
+
+    - name: Install SonarQube Scanner
+      run: |
+        curl -sSLo /tmp/sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-6.2.1.4610-linux-x64.zip
+        unzip -q /tmp/sonar-scanner.zip -d $HOME/
+        echo "$HOME/sonar-scanner-6.2.1.4610-linux-x64/bin" >> $GITHUB_PATH
+
     - name: Generate sonar project name
       run: |
-        printf "\nsonar.projectKey = ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.head_ref || github.ref_name }}" | sed s/'\/'/'-'/g >> sonar-project.properties
+        printf "\nsonar.projectKey=${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.head_ref || github.ref_name }}" | sed s/'\/'/'-'/g >> sonar-project.properties
+
     - name: SonarQube Scan
       run: |
-        export PATH=$PATH:~/.local/bin
         sonar-scanner -Dhttp.proxyPort=3129 -Dhttps.proxyPort=3129 -Dhttp.proxyHost=${{ inputs.SONAR_DOMAIN_NAME }} \
           -Dhttps.proxyHost=${{ inputs.SONAR_DOMAIN_NAME }} # -Dsonar.qualitygate.wait=true
       env:
@@ -51,3 +52,4 @@ jobs:
         NO_PROXY: localhost,127.0.0.1
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         SONAR_HOST_URL: https://${{ inputs.SONAR_DOMAIN_NAME }}
+        SONAR_SCANNER_SKIP_JRE_PROVISIONING: true
