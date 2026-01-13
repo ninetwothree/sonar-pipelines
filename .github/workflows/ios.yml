@@ -1,6 +1,6 @@
 on:
   workflow_dispatch:
-  workflow_call: 
+  workflow_call:
     secrets:
       SONAR_TOKEN:
         description: 'Token for SonarQube authentication'
@@ -17,39 +17,93 @@ on:
       GIT_LFS_PATH:
         required: false
         default: "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
-        type: string    
+        type: string
+      RUNNER_LABEL:
+          description: 'Label of a runner to use self-host or not latest'
+          required: true
+          default: macos-latest
+          type: string
 
 name: Scan project with SonarQube scanner
 jobs:
   sonar-scan:
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.RUNNER_LABEL }}
+    env:
+      GIT_LFS_PATH: ${{ inputs.GIT_LFS_PATH }}
     steps:
+    - name: Configure environment
+      run: |
+        echo "${GIT_LFS_PATH}" >> $GITHUB_PATH
     - name: Set up Git LFS
       run: |
-        git lfs install
+        # Install git-lfs
+        /opt/homebrew/bin/git-lfs install
     - uses: actions/checkout@v4
       with:
         fetch-depth: ${{ inputs.FETCH_DEPTH }}
         lfs: true
-
-    - name: Install SonarQube Scanner
-      run: |
-        curl -sSLo /tmp/sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-6.2.1.4610-linux-x64.zip
-        unzip -q /tmp/sonar-scanner.zip -d $HOME/
-        echo "$HOME/sonar-scanner-6.2.1.4610-linux-x64/bin" >> $GITHUB_PATH
-
     - name: Generate sonar project name
       run: |
-        printf "\nsonar.projectKey=${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.head_ref || github.ref_name }}" | sed s/'\/'/'-'/g >> sonar-project.properties
-
+        printf "\nsonar.projectKey = ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.head_ref || github.ref_name }}" | sed s/'\/'/'-'/g >> sonar-project.properties
     - name: SonarQube Scan
       run: |
-        sonar-scanner -Dhttp.proxyPort=3129 -Dhttps.proxyPort=3129 -Dhttp.proxyHost=${{ inputs.SONAR_DOMAIN_NAME }} \
-          -Dhttps.proxyHost=${{ inputs.SONAR_DOMAIN_NAME }} # -Dsonar.qualitygate.wait=true
+        export PATH=$PATH:~/.local/bin
+        sonar-scanner -Dhttp.proxyPort=3129 -Dhttps.proxyPort=3129 -Dhttp.proxyHost=${{ inputs.RUNNER_LABEL == 'sonar' && 'squid' || inputs.SONAR_DOMAIN_NAME }} \
+          -Dhttps.proxyHost=${{ inputs.RUNNER_LABEL == 'sonar' && 'squid' || inputs.SONAR_DOMAIN_NAME }} # -Dsonar.qualitygate.wait=true
       env:
-        HTTP_PROXY: https://${{ inputs.SONAR_DOMAIN_NAME }}:3129
-        HTTPS_PROXY: https://${{ inputs.SONAR_DOMAIN_NAME }}:3129
+        HTTP_PROXY: ${{ inputs.RUNNER_LABEL == 'sonar' && 'http://squid:3129' || format('https://{0}:3129', inputs.SONAR_DOMAIN_NAME) }}
+        HTTPS_PROXY: ${{ inputs.RUNNER_LABEL == 'sonar' && 'http://squid:3129' || format('https://{0}:3129', inputs.SONAR_DOMAIN_NAME) }}
         NO_PROXY: localhost,127.0.0.1
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        SONAR_HOST_URL: https://${{ inputs.SONAR_DOMAIN_NAME }}
-        SONAR_SCANNER_SKIP_JRE_PROVISIONING: true
+        SONAR_HOST_URL: ${{ format('https://{0}', inputs.SONAR_DOMAIN_NAME) }}
+    - name: SonarQube Quality Gate check
+      id: sonarqube-quality-gate-check
+      continue-on-error: true
+      uses: sonarsource/sonarqube-quality-gate-action@v1.1.0
+      timeout-minutes: 5
+      env:
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        SONAR_HOST_URL: ${{ format('https://{0}', inputs.SONAR_DOMAIN_NAME) }}
+        SONAR_SCANNER_JAVA_OPTS: -Xms512m -Xmx2048m
+
+    - name: Get detailed SonarQube issues
+      if: steps.sonarqube-quality-gate-check.outcome == 'failure'
+      continue-on-error: false
+      env:
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      run: |
+        PROJECT_KEY=$(echo "${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.head_ref || github.ref_name }}" | sed 's/\//-/g')
+        if [ "${{ inputs.SONAR_DOMAIN_NAME }}" = "localhost" ]; then
+          curl -s -u $SONAR_TOKEN: "http://sonar:9000/api/issues/search?componentKeys=${PROJECT_KEY}&resolved=no&ps=500" > sonar_issues.json
+        else
+          curl -s -u $SONAR_TOKEN: "https://${{ vars.SONAR_DOMAIN_NAME }}/api/issues/search?componentKeys=${PROJECT_KEY}&resolved=no&ps=500" > sonar_issues.json
+        fi
+        total=$(jq -r '.total' sonar_issues.json)
+        if [ "$total" -eq 0 ]; then
+          echo "Quality Gate Check failed!"
+          echo ""
+          echo "Quality Gate exception list:"
+          if [ "${{ inputs.SONAR_DOMAIN_NAME }}" = "localhost" ]; then
+            conditions_json=$(curl -s -u $SONAR_TOKEN: "http://sonar:9000/api/qualitygates/project_status?projectKey=$PROJECT_KEY")
+          else
+            conditions_json=$(curl -s -u $SONAR_TOKEN: "https://${{ vars.SONAR_DOMAIN_NAME }}/api/qualitygates/project_status?projectKey=$PROJECT_KEY")
+          fi
+          echo "### Quality Gate Check failed!" >> $GITHUB_STEP_SUMMARY
+          echo "#### Quality Gate exception list::" >> $GITHUB_STEP_SUMMARY
+          echo "Metric | Actual Value | Comparator | Error Threshold" >> $GITHUB_STEP_SUMMARY
+          echo "--- | --- | --- | ---" >> $GITHUB_STEP_SUMMARY
+          echo "$conditions_json" | jq -r '
+            .projectStatus.conditions[]
+            | select(.status == "ERROR")
+            | "\(.metricKey) | \(.actualValue) | \(.comparator) | \(.errorThreshold)"
+          ' >> $GITHUB_STEP_SUMMARY
+          exit 1
+        fi
+        echo "### Detailed SonarQube Issues" >> $GITHUB_STEP_SUMMARY
+        echo "File | Line | Error type | Description" >> $GITHUB_STEP_SUMMARY
+        echo "--- | --- | --- | ---" >> $GITHUB_STEP_SUMMARY
+        jq -r '.issues[] | "\(.component) | \(.line) | \(.severity) | \(.message)"' sonar_issues.json | tee sonar_issues_summary.txt | tee -a $GITHUB_STEP_SUMMARY
+
+        echo "Detailed issues summary:"
+        cat sonar_issues_summary.txt
+        exit 1
