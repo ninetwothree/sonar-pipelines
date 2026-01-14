@@ -8,8 +8,9 @@ on:
     inputs:
       SONAR_DOMAIN_NAME:
           description: 'Domain name of the SonarQube server'
-          required: true
+          required: false
           type: string
+          default: sonarqube.ninetwothree.co
       FETCH_DEPTH:
           required: false
           default: 0
@@ -20,7 +21,7 @@ on:
         type: string
       RUNNER_LABEL:
           description: 'Label of a runner to use self-host or not latest'
-          required: true
+          required: false
           default: macos-latest
           type: string
 
