@@ -1,5 +1,5 @@
 on:
-  workflow_call: 
+  workflow_call:
     secrets:
       SONAR_TOKEN:
         description: 'Token for SonarQube authentication'
@@ -7,8 +7,9 @@ on:
     inputs:
       SONAR_DOMAIN_NAME:
           description: 'Domain name of the SonarQube server'
-          required: true
+          required: false
           type: string
+          default: sonarqube.ninetwothree.co
       FETCH_DEPTH:
           required: false
           default: 0
@@ -28,82 +29,77 @@ on:
           required: false
           default: true
           type: boolean
+      RUNNER_LABEL:
+          description: 'Label of a runner to use self-host or not latest'
+          required: false
+          default: sonar
+          type: string
 
 name: Scan project with SonarQube scanner
 jobs:
-  run-pre-commit:
-    if: ${{ inputs.RUN_PRECOMMIT }}
-    name: Run pre-commit checks
-    runs-on: ubuntu-24.04
-    container:
-      image: ghcr.io/antonbabenko/pre-commit-terraform:latest
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        fetch-depth: ${{ inputs.FETCH_DEPTH }}  
-          
-    
-    - name: Configure Git Safe Directory
-      run: git config --global --add safe.directory /__w/${{ github.event.repository.name }}/${{ github.event.repository.name }}
-    
-    - name: Verify Git Repository
-      run: git status
+  # TODO: https://github.com/containers/podman/issues/3917 check if we can have separate runner for that
+  # run-pre-commit:
+  #   if: ${{ inputs.RUN_PRECOMMIT }}
+  #   name: Run pre-commit checks
+  #   runs-on: ${{ inputs.RUNNER_LABEL }}
+  #   steps:
+  #   - uses: actions/checkout@v4
+  #     with:
+  #       fetch-depth: ${{ inputs.FETCH_DEPTH }}
 
-    - name: Run Pre-Commit Hooks
-      run: pre-commit run -a
+  #   - name: Configure Git Safe Directory
+  #     run: git config --global --add safe.directory /__w/${{ github.event.repository.name }}/${{ github.event.repository.name }}
+
+  #   - name: Verify Git Repository
+  #     run: git status
+
+  #   - name: Run Pre-Commit Hooks
+  #     run: podman run --privileged --network none -e SKIP='no-commit-to-branch' -v $PWD:/lint:Z -w /lint ghcr.io/ninetwothree/pre-commit:latest run -a
+
   run-sonar-checks:
     name: Run sonar checks
-    runs-on: ubuntu-24.04
+    runs-on: ${{ inputs.RUNNER_LABEL }}
     steps:
     - uses: actions/checkout@v4
       with:
-        fetch-depth: 0 
-    
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.13'  
-    
-    - name: Setup cfn-lint
-      if: ${{ inputs.RUN_CFN_LINT }}
+        fetch-depth: 0
+
+    - name: Install dependencies
+      if: ${{ inputs.RUNNER_LABEL != 'sonar' && inputs.RUN_CFN_LINT }}
       run: |
-        pip install cfn-lint pydot
-        
+        apt install -y jq python3-pip curl unzip
+        curl -s https://raw.githubusercontent.com/terraform-linters/tflint/master/install_linux.sh | bash
+        pip install cfn-lint --break-system-packages
+
     - name: Apply cfn-lint
       if: ${{ inputs.RUN_CFN_LINT }}
       run: |
         cfn-lint -f json --output-file cfnlint.json *.cfn || true
-    
-    - uses: terraform-linters/setup-tflint@v4
-      name: Setup TFLint
-      if: ${{ inputs.RUN_TF_LINT }}
-      with:
-        tflint_version: v0.52.0
-  
+
     - name: Apply tflint
       if: ${{ inputs.RUN_TF_LINT }}
       run: |
         tflint --recursive -f json > tflint.json || true
-    
+
     - name: Generate sonar project name
       run: |
         printf "\nsonar.projectKey = ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.head_ref || github.ref_name }}" | sed s/'\/'/'-'/g >> sonar-project.properties
-    
+
     - name: SonarQube Scan
       uses: sonarsource/sonarqube-scan-action@v4.2.1
       with:
         args: >
           -Dhttp.proxyPort=3129
           -Dhttps.proxyPort=3129
-          -Dhttp.proxyHost=${{ inputs.SONAR_DOMAIN_NAME }}
-          -Dhttps.proxyHost=${{ inputs.SONAR_DOMAIN_NAME }}
+          -Dhttp.proxyHost=${{ inputs.RUNNER_LABEL == 'sonar' && 'squid' || inputs.SONAR_DOMAIN_NAME }}
+          -Dhttps.proxyHost=${{ inputs.RUNNER_LABEL == 'sonar' && 'squid' || inputs.SONAR_DOMAIN_NAME }}
       env:
-        HTTP_PROXY: https://${{ inputs.SONAR_DOMAIN_NAME }}:3129
-        HTTPS_PROXY: https://${{ inputs.SONAR_DOMAIN_NAME }}:3129
+        HTTP_PROXY: ${{ inputs.RUNNER_LABEL == 'sonar' && 'http://squid:3129' || format('https://{0}:3129', inputs.SONAR_DOMAIN_NAME) }}
+        HTTPS_PROXY: ${{ inputs.RUNNER_LABEL == 'sonar' && 'http://squid:3129' || format('https://{0}:3129', inputs.SONAR_DOMAIN_NAME) }}
         NO_PROXY: localhost,127.0.0.1
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        SONAR_HOST_URL: https://${{ inputs.SONAR_DOMAIN_NAME }}
-    
+        SONAR_HOST_URL: ${{ format('https://{0}', inputs.SONAR_DOMAIN_NAME) }}
+
     - name: SonarQube Quality Gate check
       id: sonarqube-quality-gate-check
       continue-on-error: true
@@ -111,24 +107,32 @@ jobs:
       timeout-minutes: 5
       env:
        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-       SONAR_HOST_URL: https://${{ inputs.SONAR_DOMAIN_NAME }}
+       SONAR_HOST_URL: ${{ format('https://{0}', inputs.SONAR_DOMAIN_NAME) }}
 
     - name: Get detailed SonarQube issues
       if: steps.sonarqube-quality-gate-check.outcome == 'failure'
-      continue-on-error: false 
+      continue-on-error: false
       env:
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       run: |
         PROJECT_KEY=$(echo "${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.head_ref || github.ref_name }}" | sed 's/\//-/g')
-        curl -s -u $SONAR_TOKEN: "https://${{ vars.SONAR_DOMAIN_NAME }}/api/issues/search?componentKeys=${PROJECT_KEY}&resolved=no&ps=500" > sonar_issues.json
-        
+        if [ "${{ inputs.SONAR_DOMAIN_NAME }}" = "localhost" ]; then
+          curl -s -u $SONAR_TOKEN: "http://sonar:9000/api/issues/search?componentKeys=${PROJECT_KEY}&resolved=no&ps=500" > sonar_issues.json
+        else
+          curl -s -u $SONAR_TOKEN: "https://${{ vars.SONAR_DOMAIN_NAME }}/api/issues/search?componentKeys=${PROJECT_KEY}&resolved=no&ps=500" > sonar_issues.json
+        fi
+
         total=$(jq -r '.total' sonar_issues.json)
 
         if [ "$total" -eq 0 ]; then
           echo "Quality Gate Check failed!"
           echo ""
           echo "Quality Gate exception list:"
-          conditions_json=$(curl -s -u $SONAR_TOKEN: "https://${{ vars.SONAR_DOMAIN_NAME }}/api/qualitygates/project_status?projectKey=$PROJECT_KEY")
+          if [ "${{ inputs.SONAR_DOMAIN_NAME }}" = "localhost" ]; then
+            conditions_json=$(curl -s -u $SONAR_TOKEN: "http://sonar:9000/api/qualitygates/project_status?projectKey=$PROJECT_KEY")
+          else
+            conditions_json=$(curl -s -u $SONAR_TOKEN: "https://${{ vars.SONAR_DOMAIN_NAME }}/api/qualitygates/project_status?projectKey=$PROJECT_KEY")
+          fi
 
           echo "### Quality Gate Check failed!" >> $GITHUB_STEP_SUMMARY
           echo "#### Quality Gate exception list::" >> $GITHUB_STEP_SUMMARY
@@ -142,14 +146,14 @@ jobs:
           ' >> $GITHUB_STEP_SUMMARY
           exit 1
         fi
-        
+
         echo "### Detailed SonarQube Issues" >> $GITHUB_STEP_SUMMARY
         echo "File | Line | Error type | Description" >> $GITHUB_STEP_SUMMARY
         echo "--- | --- | --- | ---" >> $GITHUB_STEP_SUMMARY
         jq -r '.issues[] | "\(.component) | \(.line) | \(.severity) | \(.message)"' sonar_issues.json | tee sonar_issues_summary.txt | tee -a $GITHUB_STEP_SUMMARY
-      
+
         echo "Detailed issues summary:"
         cat sonar_issues_summary.txt
 
-        
+
         exit 1

@@ -1,5 +1,5 @@
 on:
-  workflow_call: 
+  workflow_call:
     secrets:
       SONAR_TOKEN:
         description: 'Token for SonarQube authentication'
@@ -7,8 +7,9 @@ on:
     inputs:
       SONAR_DOMAIN_NAME:
           description: 'Domain name of the SonarQube server'
-          required: true
+          required: false
           type: string
+          default: sonarqube.ninetwothree.co
       FETCH_DEPTH:
           required: false
           default: 0
@@ -33,30 +34,35 @@ on:
         required: false
         default: true
         type: boolean
+      RUNNER_LABEL:
+          description: 'Label of a runner to use self-host or not latest'
+          required: false
+          default: sonar
+          type: string
 
 name: Scan project with SonarQube scanner
 jobs:
   run-sonar-checks:
     name: Run sonar checks
-    runs-on: ubuntu-24.04
-    steps:  
+    runs-on: ${{ inputs.RUNNER_LABEL }}
+    steps:
     - uses: actions/checkout@v4
       with:
-        fetch-depth: ${{ inputs.FETCH_DEPTH }}   
-    
+        fetch-depth: ${{ inputs.FETCH_DEPTH }}
+
     - name: Generate sonar project name
       run: |
         printf "\nsonar.projectKey = ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.head_ref || github.ref_name }}" | sed s/'\/'/'-'/g >> sonar-project.properties
-    
+
     - name: Use Node.js
       uses: actions/setup-node@v4
       with:
         node-version: ${{ inputs.NODE_VERSION }}
-    
+
     - name: Enable Corepack
       if: ${{ inputs.ENABLE_COREPACK }}
-      run: corepack enable    
-    
+      run: corepack enable
+
     - name: Install packages based on lock-file
       if: ${{ inputs.RUN_LINT_EXPORTER || inputs.RUN_STYLELINT_EXPORTER }}
       run: |
@@ -70,32 +76,32 @@ jobs:
           echo "No lock file found. Defaulting to yarn."
           yarn
         fi
-      
+
     - name: Get lint-exporter report
       if: ${{ inputs.RUN_LINT_EXPORTER }}
       run: |
         bash -c 'npm run lint-exporter || :'
-    
+
     - name: Get stylelint-exporter report
       if: ${{ inputs.RUN_STYLELINT_EXPORTER }}
       run: |
         bash -c 'npm run stylelint-exporter || :'
-    
+
     - name: SonarQube Scan
       uses: sonarsource/sonarqube-scan-action@v4.2.1
       with:
         args: >
           -Dhttp.proxyPort=3129
           -Dhttps.proxyPort=3129
-          -Dhttp.proxyHost=${{ inputs.SONAR_DOMAIN_NAME }}
-          -Dhttps.proxyHost=${{ inputs.SONAR_DOMAIN_NAME }}
+          -Dhttp.proxyHost=${{ inputs.RUNNER_LABEL == 'sonar' && 'squid' || inputs.SONAR_DOMAIN_NAME }}
+          -Dhttps.proxyHost=${{ inputs.RUNNER_LABEL == 'sonar' && 'squid' || inputs.SONAR_DOMAIN_NAME }}
       env:
-        HTTP_PROXY: https://${{ inputs.SONAR_DOMAIN_NAME }}:3129
-        HTTPS_PROXY: https://${{ inputs.SONAR_DOMAIN_NAME }}:3129
+        HTTP_PROXY: ${{ inputs.RUNNER_LABEL == 'sonar' && 'http://squid:3129' || format('https://{0}:3129', inputs.SONAR_DOMAIN_NAME) }}
+        HTTPS_PROXY: ${{ inputs.RUNNER_LABEL == 'sonar' && 'http://squid:3129' || format('https://{0}:3129', inputs.SONAR_DOMAIN_NAME) }}
         NO_PROXY: localhost,127.0.0.1
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        SONAR_HOST_URL: https://${{ inputs.SONAR_DOMAIN_NAME }}
-    
+        SONAR_HOST_URL: ${{ format('https://{0}', inputs.SONAR_DOMAIN_NAME) }}
+
     - name: SonarQube Quality Gate check
       id: sonarqube-quality-gate-check
       continue-on-error: true
@@ -103,24 +109,32 @@ jobs:
       timeout-minutes: 5
       env:
        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-       SONAR_HOST_URL: https://${{ inputs.SONAR_DOMAIN_NAME }}
-    
+       SONAR_HOST_URL: ${{ format('https://{0}', inputs.SONAR_DOMAIN_NAME) }}
+
     - name: Get detailed SonarQube issues
       if: steps.sonarqube-quality-gate-check.outcome == 'failure'
-      continue-on-error: false 
+      continue-on-error: false
       env:
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       run: |
         PROJECT_KEY=$(echo "${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.head_ref || github.ref_name }}" | sed 's/\//-/g')
-        curl -s -u $SONAR_TOKEN: "https://${{ vars.SONAR_DOMAIN_NAME }}/api/issues/search?componentKeys=${PROJECT_KEY}&resolved=no&ps=500" > sonar_issues.json
-        
+        if [ "${{ inputs.SONAR_DOMAIN_NAME }}" = "localhost" ]; then
+          curl -s -u $SONAR_TOKEN: "http://sonar:9000/api/issues/search?componentKeys=${PROJECT_KEY}&resolved=no&ps=500" > sonar_issues.json
+        else
+          curl -s -u $SONAR_TOKEN: "https://${{ vars.SONAR_DOMAIN_NAME }}/api/issues/search?componentKeys=${PROJECT_KEY}&resolved=no&ps=500" > sonar_issues.json
+        fi
+
         total=$(jq -r '.total' sonar_issues.json)
 
         if [ "$total" -eq 0 ]; then
           echo "Quality Gate Check failed!"
           echo ""
           echo "Quality Gate exception list:"
-          conditions_json=$(curl -s -u $SONAR_TOKEN: "https://${{ vars.SONAR_DOMAIN_NAME }}/api/qualitygates/project_status?projectKey=$PROJECT_KEY")
+          if [ "${{ inputs.SONAR_DOMAIN_NAME }}" = "localhost" ]; then
+            conditions_json=$(curl -s -u $SONAR_TOKEN: "http://sonar:9000/api/qualitygates/project_status?projectKey=$PROJECT_KEY")
+          else
+            conditions_json=$(curl -s -u $SONAR_TOKEN: "https://${{ vars.SONAR_DOMAIN_NAME }}/api/qualitygates/project_status?projectKey=$PROJECT_KEY")
+          fi
 
           echo "### Quality Gate Check failed!" >> $GITHUB_STEP_SUMMARY
           echo "#### Quality Gate exception list::" >> $GITHUB_STEP_SUMMARY
@@ -139,7 +153,7 @@ jobs:
         echo "File | Line | Error type | Description" >> $GITHUB_STEP_SUMMARY
         echo "--- | --- | --- | ---" >> $GITHUB_STEP_SUMMARY
         jq -r '.issues[] | "\(.component) | \(.line) | \(.severity) | \(.message)"' sonar_issues.json | tee sonar_issues_summary.txt | tee -a $GITHUB_STEP_SUMMARY
-      
+
         echo "Detailed issues summary:"
         cat sonar_issues_summary.txt
         exit 1
