@@ -48,8 +48,8 @@ jobs:
         printf "\nsonar.projectKey = ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.head_ref || github.ref_name }}" | sed s/'\/'/'-'/g >> sonar-project.properties
     - name: SonarQube Scan
       run: |
-        export PATH=$PATH:~/.local/bin
-        sonar-scanner -Dhttp.proxyPort=3129 -Dhttps.proxyPort=3129 -Dhttp.proxyHost=${{ inputs.RUNNER_LABEL == 'sonar' && 'squid' || inputs.SONAR_DOMAIN_NAME }} \
+        export PATH=$PATH:~/.local/bin:${GIT_LFS_PATH}
+        /opt/homebrew/bin/sonar-scanner -Dhttp.proxyPort=3129 -Dhttps.proxyPort=3129 -Dhttp.proxyHost=${{ inputs.RUNNER_LABEL == 'sonar' && 'squid' || inputs.SONAR_DOMAIN_NAME }} \
           -Dhttps.proxyHost=${{ inputs.RUNNER_LABEL == 'sonar' && 'squid' || inputs.SONAR_DOMAIN_NAME }} # -Dsonar.qualitygate.wait=true
       env:
         HTTP_PROXY: ${{ inputs.RUNNER_LABEL == 'sonar' && 'http://squid:3129' || format('https://{0}:3129', inputs.SONAR_DOMAIN_NAME) }}
