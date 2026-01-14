@@ -22,7 +22,7 @@ on:
           default: '17'
       RUNNER_LABEL:
           description: 'Label of a runner to use self-host or not latest'
-          required: true
+          required: false
           default: sonar
           type: string
       LINTER:

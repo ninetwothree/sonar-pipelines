@@ -22,7 +22,7 @@ on:
       RUNNER_LABEL:
           description: 'Label of a runner to use self-host or not latest'
           required: false
-          default: macos-latest
+          default: self-hosted-macos
           type: string
 
 name: Scan project with SonarQube scanner
@@ -48,7 +48,7 @@ jobs:
         printf "\nsonar.projectKey = ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.head_ref || github.ref_name }}" | sed s/'\/'/'-'/g >> sonar-project.properties
     - name: SonarQube Scan
       run: |
-        export PATH=$PATH:~/.local/bin
+        export PATH=$PATH:~/.local/bin:${GIT_LFS_PATH}
         sonar-scanner -Dhttp.proxyPort=3129 -Dhttps.proxyPort=3129 -Dhttp.proxyHost=${{ inputs.RUNNER_LABEL == 'sonar' && 'squid' || inputs.SONAR_DOMAIN_NAME }} \
           -Dhttps.proxyHost=${{ inputs.RUNNER_LABEL == 'sonar' && 'squid' || inputs.SONAR_DOMAIN_NAME }} # -Dsonar.qualitygate.wait=true
       env:
