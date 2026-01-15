@@ -22,13 +22,13 @@ on:
       RUNNER_LABEL:
           description: 'Label of a runner to use self-host or not latest'
           required: false
-          default: self-hosted-macos
+          default: ''
           type: string
 
 name: Scan project with SonarQube scanner
 jobs:
   sonar-scan:
-    runs-on: ${{ inputs.RUNNER_LABEL }}
+    runs-on: ${{ inputs.RUNNER_LABEL != '' && inputs.RUNNER_LABEL || (github.repository_owner == 'ninetwothree' && 'self-hosted-macos' || 'macos-latest') }}
     env:
       GIT_LFS_PATH: ${{ inputs.GIT_LFS_PATH }}
     steps:
@@ -49,11 +49,11 @@ jobs:
     - name: SonarQube Scan
       run: |
         export PATH=$PATH:~/.local/bin:${GIT_LFS_PATH}
-        sonar-scanner -Dhttp.proxyPort=3129 -Dhttps.proxyPort=3129 -Dhttp.proxyHost=${{ inputs.RUNNER_LABEL == 'sonar' && 'squid' || inputs.SONAR_DOMAIN_NAME }} \
-          -Dhttps.proxyHost=${{ inputs.RUNNER_LABEL == 'sonar' && 'squid' || inputs.SONAR_DOMAIN_NAME }} # -Dsonar.qualitygate.wait=true
+        sonar-scanner -Dhttp.proxyPort=3129 -Dhttps.proxyPort=3129 -Dhttp.proxyHost=${{ (inputs.RUNNER_LABEL == 'sonar' || (inputs.RUNNER_LABEL == '' && github.repository_owner == 'ninetwothree')) && 'squid' || inputs.SONAR_DOMAIN_NAME }} \
+          -Dhttps.proxyHost=${{ (inputs.RUNNER_LABEL == 'sonar' || (inputs.RUNNER_LABEL == '' && github.repository_owner == 'ninetwothree')) && 'squid' || inputs.SONAR_DOMAIN_NAME }} # -Dsonar.qualitygate.wait=true
       env:
-        HTTP_PROXY: ${{ inputs.RUNNER_LABEL == 'sonar' && 'http://squid:3129' || format('https://{0}:3129', inputs.SONAR_DOMAIN_NAME) }}
-        HTTPS_PROXY: ${{ inputs.RUNNER_LABEL == 'sonar' && 'http://squid:3129' || format('https://{0}:3129', inputs.SONAR_DOMAIN_NAME) }}
+        HTTP_PROXY: ${{ (inputs.RUNNER_LABEL == 'sonar' || (inputs.RUNNER_LABEL == '' && github.repository_owner == 'ninetwothree')) && 'http://squid:3129' || format('https://{0}:3129', inputs.SONAR_DOMAIN_NAME) }}
+        HTTPS_PROXY: ${{ (inputs.RUNNER_LABEL == 'sonar' || (inputs.RUNNER_LABEL == '' && github.repository_owner == 'ninetwothree')) && 'http://squid:3129' || format('https://{0}:3129', inputs.SONAR_DOMAIN_NAME) }}
         NO_PROXY: localhost,127.0.0.1
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         SONAR_HOST_URL: ${{ format('https://{0}', inputs.SONAR_DOMAIN_NAME) }}
