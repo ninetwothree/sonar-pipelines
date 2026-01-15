@@ -57,6 +57,7 @@ jobs:
         NO_PROXY: localhost,127.0.0.1
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         SONAR_HOST_URL: ${{ format('https://{0}', inputs.SONAR_DOMAIN_NAME) }}
+        SONAR_SCANNER_SKIP_JRE_PROVISIONING: true
     - name: SonarQube Quality Gate check
       id: sonarqube-quality-gate-check
       continue-on-error: true
