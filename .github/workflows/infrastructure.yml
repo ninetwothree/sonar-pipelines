@@ -65,7 +65,7 @@ jobs:
         fetch-depth: 0
 
     - name: Install dependencies
-      if: ${{ inputs.RUNNER_LABEL != 'sonar' && inputs.RUN_CFN_LINT }}
+      if: ${{ inputs.RUNNER_LABEL != '' && inputs.RUN_CFN_LINT }}
       run: |
         apt install -y jq python3-pip curl unzip
         curl -s https://raw.githubusercontent.com/terraform-linters/tflint/master/install_linux.sh | bash
