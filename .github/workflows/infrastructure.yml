@@ -116,7 +116,7 @@ jobs:
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       run: |
         PROJECT_KEY=$(echo "${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.head_ref || github.ref_name }}" | sed 's/\//-/g')
-        if [ "${{ inputs.SONAR_DOMAIN_NAME }}" = "localhost" ]; then
+        if [ "${{ inputs.RUNNER_LABEL }}" = "" ]; then
           curl -s -u $SONAR_TOKEN: "http://sonar:9000/api/issues/search?componentKeys=${PROJECT_KEY}&resolved=no&ps=500" > sonar_issues.json
         else
           curl -s -u $SONAR_TOKEN: "https://${{ vars.SONAR_DOMAIN_NAME }}/api/issues/search?componentKeys=${PROJECT_KEY}&resolved=no&ps=500" > sonar_issues.json
@@ -128,7 +128,7 @@ jobs:
           echo "Quality Gate Check failed!"
           echo ""
           echo "Quality Gate exception list:"
-          if [ "${{ inputs.SONAR_DOMAIN_NAME }}" = "localhost" ]; then
+          if [ "${{ inputs.RUNNER_LABEL }}" = "" ]; then
             conditions_json=$(curl -s -u $SONAR_TOKEN: "http://sonar:9000/api/qualitygates/project_status?projectKey=$PROJECT_KEY")
           else
             conditions_json=$(curl -s -u $SONAR_TOKEN: "https://${{ vars.SONAR_DOMAIN_NAME }}/api/qualitygates/project_status?projectKey=$PROJECT_KEY")
