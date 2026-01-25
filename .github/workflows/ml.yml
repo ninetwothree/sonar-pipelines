@@ -47,14 +47,14 @@ jobs:
         python-version: ${{ inputs.PYTHON_VERSION }}
 
     - name: Install dependencies
-      if: ${{ inputs.RUN_FLAKE8 && contains(inputs.RUNNER_LABEL, 'self') }}
+      if: ${{ inputs.RUN_FLAKE8 && inputs.RUNNER_LABEL != '' && inputs.RUNNER_LABEL }}
       run: |
         python3 -m pip install --upgrade pip
         pip install poetry
         poetry install
 
     - name: Skip dependencies installation
-      if: ${{ inputs.RUN_FLAKE8 && !contains(inputs.RUNNER_LABEL, 'self') }}
+      if: ${{ inputs.RUN_FLAKE8 }}
       run: |
         poetry install
 
