@@ -45,7 +45,7 @@ jobs:
         lfs: true
     - name: Generate sonar project name
       run: |
-        printf "\nsonar.projectKey = ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.head_ref || github.ref_name }}" | sed s/'\/'/'-'/g >> sonar-project.properties
+        printf "\nsonar.projectKey = ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.head_ref || github.ref_name }}" | sed 's/\\/\\-/g; s/[()]//g' >> sonar-project.properties
     - name: SonarQube Scan
       run: |
         export PATH=$PATH:~/.local/bin:${GIT_LFS_PATH}
