@@ -46,14 +46,14 @@ jobs:
       with:
         python-version: ${{ inputs.PYTHON_VERSION }}
 
-    - name: Install dependencies
-      if: ${{ inputs.RUN_FLAKE8 && inputs.RUNNER_LABEL != '' && inputs.RUNNER_LABEL }}
+    - name: Install poetry and project dependencies with it
+      if: ${{ inputs.RUN_FLAKE8 && github.repository_owner != 'ninetwothree' }}
       run: |
         python3 -m pip install --upgrade pip
         pip install poetry
         poetry install
 
-    - name: Skip dependencies installation
+    - name: Install poetry project dependencies
       if: ${{ inputs.RUN_FLAKE8 }}
       run: |
         poetry install
