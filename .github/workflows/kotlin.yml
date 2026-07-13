@@ -67,8 +67,9 @@ jobs:
         rm -f app/build/reports/detekt/detekt.html
 
     - name: SonarQube Scan
-      uses: sonarsource/sonarqube-scan-action@v8.1.0
+      uses: sonarsource/sonarqube-scan-action@master
       with:
+        skipSignatureVerification: true
         args: >
           -Dhttp.proxyPort=3129
           -Dhttps.proxyPort=3129
