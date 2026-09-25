@@ -78,8 +78,8 @@ jobs:
         sonar-scanner -Dhttp.proxyPort=3129 -Dhttps.proxyPort=3129 -Dhttp.proxyHost=${{ steps.net.outputs.is_self_hosted == 'true' && 'squid' || inputs.SONAR_DOMAIN_NAME }} \
           -Dhttps.proxyHost=${{ steps.net.outputs.is_self_hosted == 'true' && 'squid' || inputs.SONAR_DOMAIN_NAME }}
       env:
-        HTTP_PROXY: ${{ steps.net.outputs.is_self_hosted == 'true' && 'http://squid:3129' || format('https://{0}:3129', inputs.SONAR_DOMAIN_NAME) }}
-        HTTPS_PROXY: ${{ steps.net.outputs.is_self_hosted == 'true' && 'http://squid:3129' || format('https://{0}:3129', inputs.SONAR_DOMAIN_NAME) }}
+        HTTP_PROXY: ${{ steps.net.outputs.is_self_hosted == 'true' && 'http://squid:3129' || format('http://{0}:3129', inputs.SONAR_DOMAIN_NAME) }}
+        HTTPS_PROXY: ${{ steps.net.outputs.is_self_hosted == 'true' && 'http://squid:3129' || format('http://{0}:3129', inputs.SONAR_DOMAIN_NAME) }}
         NO_PROXY: localhost,127.0.0.1
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         SONAR_HOST_URL: ${{ format('https://{0}', inputs.SONAR_DOMAIN_NAME) }}
