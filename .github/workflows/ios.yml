@@ -46,40 +46,40 @@ jobs:
     - name: Generate sonar project name
       run: |
         printf "\nsonar.projectKey = ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.head_ref || github.ref_name }}" | sed 's|/|-|g; s/[()]//g' >> sonar-project.properties
-    - name: Resolve network mode
-      # Only the org's own self-hosted-macos/"sonar" runner is network-isolated
-      # behind squid - it's the only case that needs any proxy at all. Every
-      # other runner (macos-latest fallback for repos outside this org, or a
-      # caller-supplied RUNNER_LABEL) has normal internet access and should
-      # talk to SonarQube directly - it already answers on 443 publicly.
-      # Routing those through squid or the :3129 domain proxy was the bug:
-      # neither forwards arbitrary hosts like binaries.sonarsource.com, so
-      # anything needing to reach outside SonarQube itself failed there.
+    - name: Resolve runner mode
+      # Distinguishes the org's own self-hosted-macos runner (has
+      # sonar-scanner preinstalled) from everything else - a caller-supplied
+      # RUNNER_LABEL, or the macos-latest fallback for a repo transferred
+      # outside this org - which needs it installed fresh. This is unrelated
+      # to proxying: every runner always talks to SonarQube through a proxy
+      # below (squid directly for the self-hosted runner, the public
+      # :3129 domain proxy for everything else) since squid's own allowlist
+      # (dstdomain .sonarsource.com, sonarqube.ninetwothree.co) already
+      # covers what sonar-scanner needs either way.
       id: net
       run: |
-        if [ "${{ inputs.RUNNER_LABEL == 'sonar' || (inputs.RUNNER_LABEL == '' && github.repository_owner == 'ninetwothree') }}" = "true" ]; then
-          echo "use_proxy=true" >> "$GITHUB_OUTPUT"
+        if [ "${{ inputs.RUNNER_LABEL == 'self-hosted-macos' || (inputs.RUNNER_LABEL == '' && github.repository_owner == 'ninetwothree') }}" = "true" ]; then
+          echo "is_self_hosted=true" >> "$GITHUB_OUTPUT"
         else
-          echo "use_proxy=false" >> "$GITHUB_OUTPUT"
+          echo "is_self_hosted=false" >> "$GITHUB_OUTPUT"
         fi
     - name: Install sonar-scanner (non-self-hosted runner)
       # self-hosted-macos carries sonar-scanner baked into its image; a
       # generic macos-latest fallback (e.g. a repo transferred out of this
-      # org) has nothing preinstalled.
-      if: steps.net.outputs.use_proxy == 'false'
+      # org) has nothing preinstalled. GitHub's macos-latest image ships
+      # Homebrew by default, and this step doesn't need the proxy below -
+      # only the SonarQube Scan step's own traffic goes through squid.
+      if: steps.net.outputs.is_self_hosted == 'false'
       run: |
         command -v sonar-scanner >/dev/null 2>&1 || brew install sonar-scanner
     - name: SonarQube Scan
       run: |
         export PATH=$PATH:~/.local/bin:${GIT_LFS_PATH}
-        if [ "${{ steps.net.outputs.use_proxy }}" = "true" ]; then
-          export HTTP_PROXY=http://squid:3129
-          export HTTPS_PROXY=http://squid:3129
-          sonar-scanner -Dhttp.proxyPort=3129 -Dhttps.proxyPort=3129 -Dhttp.proxyHost=squid -Dhttps.proxyHost=squid
-        else
-          sonar-scanner
-        fi
+        sonar-scanner -Dhttp.proxyPort=3129 -Dhttps.proxyPort=3129 -Dhttp.proxyHost=${{ steps.net.outputs.is_self_hosted == 'true' && 'squid' || inputs.SONAR_DOMAIN_NAME }} \
+          -Dhttps.proxyHost=${{ steps.net.outputs.is_self_hosted == 'true' && 'squid' || inputs.SONAR_DOMAIN_NAME }}
       env:
+        HTTP_PROXY: ${{ steps.net.outputs.is_self_hosted == 'true' && 'http://squid:3129' || format('https://{0}:3129', inputs.SONAR_DOMAIN_NAME) }}
+        HTTPS_PROXY: ${{ steps.net.outputs.is_self_hosted == 'true' && 'http://squid:3129' || format('https://{0}:3129', inputs.SONAR_DOMAIN_NAME) }}
         NO_PROXY: localhost,127.0.0.1
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         SONAR_HOST_URL: ${{ format('https://{0}', inputs.SONAR_DOMAIN_NAME) }}
