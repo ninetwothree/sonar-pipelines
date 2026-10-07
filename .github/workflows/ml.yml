@@ -35,23 +35,73 @@ name: Scan project with SonarQube scanner
 jobs:
   build:
     name: Run checks
-    runs-on: ${{ inputs.RUNNER_LABEL != '' && inputs.RUNNER_LABEL || (github.repository_owner == 'ninetwothree' && 'sonar' || 'ubuntu-latest') }}
+    runs-on: ${{ inputs.RUNNER_LABEL != '' && inputs.RUNNER_LABEL || (github.repository_owner == 'ninetwothree' && 'fireactions' || 'ubuntu-latest') }}
     steps:
     - uses: actions/checkout@v4
       with:
         fetch-depth: ${{ inputs.FETCH_DEPTH }}
+
+    - name: Resolve runner network
+      # How this runner reaches SonarQube:
+      #   sonar        - locked-down self-hosted runner: everything via squid,
+      #                  API calls to the internal sonar:9000 address.
+      #   ubuntu-* etc - GitHub-hosted runners: unchanged, SonarQube's own
+      #                  proxy on :3129.
+      #   anything else (fireactions) - normal internet access: direct, no proxy.
+      id: net
+      shell: bash
+      env:
+        RESOLVED_RUNNER: ${{ inputs.RUNNER_LABEL != '' && inputs.RUNNER_LABEL || (github.repository_owner == 'ninetwothree' && 'fireactions' || 'ubuntu-latest') }}
+        SONAR_DOMAIN: ${{ inputs.SONAR_DOMAIN_NAME }}
+      run: |
+        set -euo pipefail
+        case "$RESOLVED_RUNNER" in
+          sonar)
+            proxy_host="squid"
+            proxy_url="http://squid:3129"
+            no_proxy="localhost,127.0.0.1"
+            api_url="http://sonar:9000"
+            ;;
+          ubuntu-*|macos-*|windows-*)
+            proxy_host="$SONAR_DOMAIN"
+            proxy_url="https://$SONAR_DOMAIN:3129"
+            no_proxy="localhost,127.0.0.1"
+            api_url="https://$SONAR_DOMAIN"
+            ;;
+          *)
+            proxy_host=""
+            proxy_url=""
+            no_proxy="localhost,127.0.0.1"
+            api_url="https://$SONAR_DOMAIN"
+            ;;
+        esac
+        proxy_args=""
+        if [ -n "$proxy_host" ]; then
+          proxy_args="-Dhttp.proxyPort=3129 -Dhttps.proxyPort=3129 -Dhttp.proxyHost=$proxy_host -Dhttps.proxyHost=$proxy_host"
+        fi
+        echo "Runner: $RESOLVED_RUNNER, proxy: ${proxy_url:-none}, API: $api_url"
+        {
+          echo "proxy_args=$proxy_args"
+          echo "proxy_url=$proxy_url"
+          echo "no_proxy=$no_proxy"
+          echo "api_url=$api_url"
+        } >> "$GITHUB_OUTPUT"
+
 
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
         python-version: ${{ inputs.PYTHON_VERSION }}
 
-    - name: Install poetry and project dependencies with it
-      if: ${{ inputs.RUN_FLAKE8 && github.repository_owner != 'ninetwothree' }}
+    - name: Install poetry
+      if: ${{ inputs.RUN_FLAKE8 }}
       run: |
-        python3 -m pip install --upgrade pip
-        pip install poetry
-        poetry install
+        if command -v poetry >/dev/null 2>&1; then
+          echo "poetry already present: $(poetry --version)"
+        else
+          python3 -m pip install --upgrade pip
+          pip install poetry
+        fi
 
     - name: Install poetry project dependencies
       if: ${{ inputs.RUN_FLAKE8 }}
@@ -71,14 +121,11 @@ jobs:
       uses: sonarsource/sonarqube-scan-action@v4.2.1
       with:
         args: >
-          -Dhttp.proxyPort=3129
-          -Dhttps.proxyPort=3129
-          -Dhttp.proxyHost=${{ (inputs.RUNNER_LABEL == 'sonar' || (inputs.RUNNER_LABEL == '' && github.repository_owner == 'ninetwothree')) && 'squid' || inputs.SONAR_DOMAIN_NAME }}
-          -Dhttps.proxyHost=${{ (inputs.RUNNER_LABEL == 'sonar' || (inputs.RUNNER_LABEL == '' && github.repository_owner == 'ninetwothree')) && 'squid' || inputs.SONAR_DOMAIN_NAME }}
+          ${{ steps.net.outputs.proxy_args }}
       env:
-        HTTP_PROXY: ${{ (inputs.RUNNER_LABEL == 'sonar' || (inputs.RUNNER_LABEL == '' && github.repository_owner == 'ninetwothree')) && 'http://squid:3129' || format('https://{0}:3129', inputs.SONAR_DOMAIN_NAME) }}
-        HTTPS_PROXY: ${{ (inputs.RUNNER_LABEL == 'sonar' || (inputs.RUNNER_LABEL == '' && github.repository_owner == 'ninetwothree')) && 'http://squid:3129' || format('https://{0}:3129', inputs.SONAR_DOMAIN_NAME) }}
-        NO_PROXY: localhost,127.0.0.1
+        HTTP_PROXY: ${{ steps.net.outputs.proxy_url }}
+        HTTPS_PROXY: ${{ steps.net.outputs.proxy_url }}
+        NO_PROXY: ${{ steps.net.outputs.no_proxy }}
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         SONAR_HOST_URL: ${{ format('https://{0}', inputs.SONAR_DOMAIN_NAME) }}
 
@@ -96,13 +143,10 @@ jobs:
       continue-on-error: false
       env:
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        SONAR_API_URL: ${{ steps.net.outputs.api_url }}
       run: |
         PROJECT_KEY=$(echo "${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.head_ref || github.ref_name }}" | sed 's/\//-/g')
-        if [ "${{ inputs.RUNNER_LABEL != '' && inputs.RUNNER_LABEL || (github.repository_owner == 'ninetwothree' && 'sonar' || 'ubuntu-latest') }}" = "" ]; then
-          curl -s -u $SONAR_TOKEN: "http://sonar:9000/api/issues/search?componentKeys=${PROJECT_KEY}&resolved=no&ps=500" > sonar_issues.json
-        else
-          curl -s -u $SONAR_TOKEN: "https://${{ vars.SONAR_DOMAIN_NAME }}/api/issues/search?componentKeys=${PROJECT_KEY}&resolved=no&ps=500" > sonar_issues.json
-        fi
+        curl -s -u $SONAR_TOKEN: "$SONAR_API_URL/api/issues/search?componentKeys=${PROJECT_KEY}&resolved=no&ps=500" > sonar_issues.json
 
         total=$(jq -r '.total' sonar_issues.json)
 
@@ -110,11 +154,7 @@ jobs:
           echo "Quality Gate Check failed!"
           echo ""
           echo "Quality Gate exception list:"
-          if [ "${{ inputs.RUNNER_LABEL != '' && inputs.RUNNER_LABEL || (github.repository_owner == 'ninetwothree' && 'sonar' || 'ubuntu-latest') }}" = "" ]; then
-            conditions_json=$(curl -s -u $SONAR_TOKEN: "http://sonar:9000/api/qualitygates/project_status?projectKey=$PROJECT_KEY")
-          else
-            conditions_json=$(curl -s -u $SONAR_TOKEN: "https://${{ vars.SONAR_DOMAIN_NAME }}/api/qualitygates/project_status?projectKey=$PROJECT_KEY")
-          fi
+          conditions_json=$(curl -s -u $SONAR_TOKEN: "$SONAR_API_URL/api/qualitygates/project_status?projectKey=$PROJECT_KEY")
 
           echo "### Quality Gate Check failed!" >> $GITHUB_STEP_SUMMARY
           echo "#### Quality Gate exception list::" >> $GITHUB_STEP_SUMMARY
