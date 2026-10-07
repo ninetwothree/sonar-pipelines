@@ -36,6 +36,11 @@ jobs:
   run-sonar-checks:
     name: Build
     runs-on: ${{ inputs.RUNNER_LABEL != '' && inputs.RUNNER_LABEL || (github.repository_owner == 'ninetwothree' && 'fireactions' || 'ubuntu-latest') }}
+    env:
+      # Self-hosted images may have no UTF-8 locale; Java then fails on
+      # non-ASCII file names (InvalidPathException: Malformed input).
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
     steps:
     - uses: actions/checkout@v2
       with:
@@ -57,18 +62,21 @@ jobs:
         set -euo pipefail
         case "$RESOLVED_RUNNER" in
           sonar)
+            mode="sonar"
             proxy_host="squid"
             proxy_url="http://squid:3129"
             no_proxy="localhost,127.0.0.1"
             api_url="http://sonar:9000"
             ;;
           ubuntu-*|macos-*|windows-*)
+            mode="github-hosted"
             proxy_host="$SONAR_DOMAIN"
             proxy_url="http://$SONAR_DOMAIN:3129"
             no_proxy="localhost,127.0.0.1,binaries.sonarsource.com"
             api_url="https://$SONAR_DOMAIN"
             ;;
           *)
+            mode="direct"
             proxy_host=""
             proxy_url=""
             no_proxy="localhost,127.0.0.1"
@@ -85,6 +93,7 @@ jobs:
           echo "proxy_url=$proxy_url"
           echo "no_proxy=$no_proxy"
           echo "api_url=$api_url"
+          echo "mode=$mode"
         } >> "$GITHUB_OUTPUT"
 
 
