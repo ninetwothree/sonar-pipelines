@@ -87,7 +87,7 @@ jobs:
             mode="github-hosted"
             proxy_host="$SONAR_DOMAIN"
             proxy_url="https://$SONAR_DOMAIN:3129"
-            no_proxy="localhost,127.0.0.1"
+            no_proxy="localhost,127.0.0.1,binaries.sonarsource.com"
             api_url="https://$SONAR_DOMAIN"
             ;;
           *)
@@ -144,7 +144,7 @@ jobs:
 
     - name: Setup TFLint
       if: ${{ inputs.RUN_TF_LINT && steps.net.outputs.mode != 'sonar' && !(github.repository_owner == 'ninetwothree' && steps.net.outputs.runner == 'fireactions') }}
-      uses: terraform-linters/setup-tflint@master
+      uses: terraform-linters/setup-tflint@v4
       with:
         tflint_version: v0.52.0
 

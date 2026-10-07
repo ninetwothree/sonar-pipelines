@@ -64,7 +64,7 @@ jobs:
             mode="github-hosted"
             proxy_host="$SONAR_DOMAIN"
             proxy_url="https://$SONAR_DOMAIN:3129"
-            no_proxy="localhost,127.0.0.1"
+            no_proxy="localhost,127.0.0.1,binaries.sonarsource.com"
             api_url="https://$SONAR_DOMAIN"
             ;;
           *)
