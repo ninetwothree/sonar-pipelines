@@ -138,7 +138,9 @@ jobs:
           $SUDO apt-get install -y -qq $missing
         fi
         if [ "${{ inputs.RUN_CFN_LINT }}" = "true" ] && ! command -v cfn-lint >/dev/null 2>&1; then
-          $SUDO pip3 install cfn-lint --break-system-packages || $SUDO pip3 install cfn-lint
+          # --ignore-installed: on Ubuntu 24.04 pip cannot replace the
+          # Debian-packaged PyYAML that cfn-lint wants to upgrade.
+          $SUDO pip3 install --ignore-installed cfn-lint --break-system-packages || $SUDO pip3 install --ignore-installed cfn-lint
         fi
 
     - name: Apply cfn-lint
