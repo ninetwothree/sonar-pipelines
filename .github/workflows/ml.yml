@@ -37,22 +37,14 @@ jobs:
     name: Run checks
     runs-on: ${{ inputs.RUNNER_LABEL != '' && inputs.RUNNER_LABEL || (github.repository_owner == 'ninetwothree' && 'fireactions' || 'ubuntu-latest') }}
     env:
-      # Self-hosted images may have no UTF-8 locale; Java then fails on
-      # non-ASCII file names (InvalidPathException: Malformed input).
       LANG: C.UTF-8
       LC_ALL: C.UTF-8
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@main
       with:
         fetch-depth: ${{ inputs.FETCH_DEPTH }}
 
     - name: Resolve runner network
-      # How this runner reaches SonarQube:
-      #   sonar        - locked-down self-hosted runner: everything via squid,
-      #                  API calls to the internal sonar:9000 address.
-      #   ubuntu-* etc - GitHub-hosted runners: unchanged, SonarQube's own
-      #                  proxy on :3129.
-      #   anything else (fireactions) - normal internet access: direct, no proxy.
       id: net
       shell: bash
       env:
@@ -98,7 +90,7 @@ jobs:
 
 
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@main
       with:
         python-version: ${{ inputs.PYTHON_VERSION }}
 
@@ -127,7 +119,7 @@ jobs:
         printf "\nsonar.projectKey = ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.head_ref || github.ref_name }}" | sed s/'\/'/'-'/g >> sonar-project.properties
 
     - name: SonarQube Scan
-      uses: sonarsource/sonarqube-scan-action@v4.2.1
+      uses: sonarsource/sonarqube-scan-action@master
       with:
         args: >
           ${{ steps.net.outputs.proxy_args }}
@@ -141,7 +133,7 @@ jobs:
     - name: SonarQube Quality Gate check
       id: sonarqube-quality-gate-check
       continue-on-error: true
-      uses: sonarsource/sonarqube-quality-gate-action@v1.1.0
+      uses: sonarsource/sonarqube-quality-gate-action@master
       timeout-minutes: 5
       env:
        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
