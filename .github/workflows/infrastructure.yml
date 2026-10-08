@@ -58,52 +58,127 @@ jobs:
 
   run-sonar-checks:
     name: Run sonar checks
-    runs-on: ${{ inputs.RUNNER_LABEL != '' && inputs.RUNNER_LABEL || (github.repository_owner == 'ninetwothree' && 'sonar' || 'ubuntu-latest') }}
+    runs-on: ${{ inputs.RUNNER_LABEL != '' && inputs.RUNNER_LABEL || (github.repository_owner == 'ninetwothree' && 'fireactions' || 'ubuntu-latest') }}
+    env:
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@main
       with:
         fetch-depth: 0
 
-    - name: Install dependencies
-      if: ${{ inputs.RUNNER_LABEL != '' && inputs.RUN_CFN_LINT }}
+    - name: Resolve runner network
+      id: net
+      shell: bash
+      env:
+        RESOLVED_RUNNER: ${{ inputs.RUNNER_LABEL != '' && inputs.RUNNER_LABEL || (github.repository_owner == 'ninetwothree' && 'fireactions' || 'ubuntu-latest') }}
+        SONAR_DOMAIN: ${{ inputs.SONAR_DOMAIN_NAME }}
       run: |
-        apt install -y jq python3-pip curl unzip
-        curl -s https://raw.githubusercontent.com/terraform-linters/tflint/master/install_linux.sh | bash
-        pip install cfn-lint --break-system-packages
+        set -euo pipefail
+        case "$RESOLVED_RUNNER" in
+          sonar)
+            mode="sonar"
+            proxy_host="squid"
+            proxy_url="http://squid:3129"
+            no_proxy="localhost,127.0.0.1"
+            api_url="http://sonar:9000"
+            ;;
+          ubuntu-*|macos-*|windows-*)
+            mode="github-hosted"
+            proxy_host="$SONAR_DOMAIN"
+            proxy_url=""
+            no_proxy="localhost,127.0.0.1,binaries.sonarsource.com"
+            api_url="https://$SONAR_DOMAIN"
+            ;;
+          *)
+            mode="direct"
+            proxy_host=""
+            proxy_url=""
+            no_proxy="localhost,127.0.0.1"
+            api_url="https://$SONAR_DOMAIN"
+            ;;
+        esac
+        proxy_args=""
+        if [ -n "$proxy_host" ]; then
+          proxy_args="-Dhttp.proxyPort=3129 -Dhttps.proxyPort=3129 -Dhttp.proxyHost=$proxy_host -Dhttps.proxyHost=$proxy_host"
+        fi
+        echo "Runner: $RESOLVED_RUNNER, proxy: ${proxy_url:-none}, API: $api_url"
+        {
+          echo "proxy_args=$proxy_args"
+          echo "proxy_url=$proxy_url"
+          echo "no_proxy=$no_proxy"
+          echo "api_url=$api_url"
+          echo "mode=$mode"
+          echo "runner=$RESOLVED_RUNNER"
+        } >> "$GITHUB_OUTPUT"
+
+
+    - name: Install dependencies
+      if: ${{ inputs.RUN_CFN_LINT && !(github.repository_owner == 'ninetwothree' && steps.net.outputs.runner == 'fireactions') }}
+      run: |
+        SUDO=""
+        if [ "$(id -u)" != "0" ]; then SUDO="sudo"; fi
+        missing=""
+        for bin in jq curl unzip; do command -v "$bin" >/dev/null 2>&1 || missing="$missing $bin"; done
+        if [ "${{ inputs.RUN_CFN_LINT }}" = "true" ] && ! command -v cfn-lint >/dev/null 2>&1 && ! command -v pip3 >/dev/null 2>&1; then
+          missing="$missing python3-pip"
+        fi
+        if [ -n "$missing" ]; then
+          $SUDO apt-get update -qq
+          $SUDO apt-get install -y -qq $missing
+        fi
+        if [ "${{ inputs.RUN_CFN_LINT }}" = "true" ] && ! command -v cfn-lint >/dev/null 2>&1; then
+          $SUDO pip3 install --ignore-installed cfn-lint --break-system-packages || $SUDO pip3 install --ignore-installed cfn-lint
+        fi
 
     - name: Apply cfn-lint
       if: ${{ inputs.RUN_CFN_LINT }}
+      env:
+        LINT_IN_DOCKER: ${{ github.repository_owner == 'ninetwothree' && steps.net.outputs.runner == 'fireactions' }}
       run: |
-        cfn-lint -f json --output-file cfnlint.json *.cfn || true
+        if [ "$LINT_IN_DOCKER" = "true" ]; then
+          docker run -q --network=none -v "$(pwd):/lint:Z" -w /lint --entrypoint cfn-lint ghcr.io/ninetwothree/pre-commit:latest -f json --output-file cfnlint.json *.cfn || true
+        else
+          cfn-lint -f json --output-file cfnlint.json *.cfn || true
+        fi
+
+    - name: Setup TFLint
+      if: ${{ inputs.RUN_TF_LINT && steps.net.outputs.mode != 'sonar' && !(github.repository_owner == 'ninetwothree' && steps.net.outputs.runner == 'fireactions') }}
+      uses: terraform-linters/setup-tflint@v4
+      with:
+        tflint_version: v0.52.0
 
     - name: Apply tflint
       if: ${{ inputs.RUN_TF_LINT }}
+      env:
+        LINT_IN_DOCKER: ${{ github.repository_owner == 'ninetwothree' && steps.net.outputs.runner == 'fireactions' }}
       run: |
-        tflint --recursive -f json > tflint.json || true
+        if [ "$LINT_IN_DOCKER" = "true" ]; then
+          docker run -q --network=none -v "$(pwd):/lint:Z" -w /lint --entrypoint tflint ghcr.io/ninetwothree/pre-commit:latest --recursive -f json > tflint.json || true
+        else
+          tflint --recursive -f json > tflint.json || true
+        fi
 
     - name: Generate sonar project name
       run: |
         printf "\nsonar.projectKey = ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.head_ref || github.ref_name }}" | sed s/'\/'/'-'/g >> sonar-project.properties
 
     - name: SonarQube Scan
-      uses: sonarsource/sonarqube-scan-action@v4.2.1
+      uses: sonarsource/sonarqube-scan-action@master
       with:
         args: >
-          -Dhttp.proxyPort=3129
-          -Dhttps.proxyPort=3129
-          -Dhttp.proxyHost=${{ (inputs.RUNNER_LABEL == 'sonar' || (inputs.RUNNER_LABEL == '' && github.repository_owner == 'ninetwothree')) && 'squid' || inputs.SONAR_DOMAIN_NAME }}
-          -Dhttps.proxyHost=${{ (inputs.RUNNER_LABEL == 'sonar' || (inputs.RUNNER_LABEL == '' && github.repository_owner == 'ninetwothree')) && 'squid' || inputs.SONAR_DOMAIN_NAME }}
+          ${{ steps.net.outputs.proxy_args }}
       env:
-        HTTP_PROXY: ${{ (inputs.RUNNER_LABEL == 'sonar' || (inputs.RUNNER_LABEL == '' && github.repository_owner == 'ninetwothree')) && 'http://squid:3129' || format('https://{0}:3129', inputs.SONAR_DOMAIN_NAME) }}
-        HTTPS_PROXY: ${{ (inputs.RUNNER_LABEL == 'sonar' || (inputs.RUNNER_LABEL == '' && github.repository_owner == 'ninetwothree')) && 'http://squid:3129' || format('https://{0}:3129', inputs.SONAR_DOMAIN_NAME) }}
-        NO_PROXY: localhost,127.0.0.1
+        HTTP_PROXY: ${{ steps.net.outputs.proxy_url }}
+        HTTPS_PROXY: ${{ steps.net.outputs.proxy_url }}
+        NO_PROXY: ${{ steps.net.outputs.no_proxy }}
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         SONAR_HOST_URL: ${{ format('https://{0}', inputs.SONAR_DOMAIN_NAME) }}
 
     - name: SonarQube Quality Gate check
       id: sonarqube-quality-gate-check
       continue-on-error: true
-      uses: sonarsource/sonarqube-quality-gate-action@v1.1.0
+      uses: sonarsource/sonarqube-quality-gate-action@master
       timeout-minutes: 5
       env:
        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -114,13 +189,10 @@ jobs:
       continue-on-error: false
       env:
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        SONAR_API_URL: ${{ steps.net.outputs.api_url }}
       run: |
         PROJECT_KEY=$(echo "${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.head_ref || github.ref_name }}" | sed 's/\//-/g')
-        if [ "${{ inputs.RUNNER_LABEL }}" = "" ]; then
-          curl -s -u $SONAR_TOKEN: "http://sonar:9000/api/issues/search?componentKeys=${PROJECT_KEY}&resolved=no&ps=500" > sonar_issues.json
-        else
-          curl -s -u $SONAR_TOKEN: "https://${{ vars.SONAR_DOMAIN_NAME }}/api/issues/search?componentKeys=${PROJECT_KEY}&resolved=no&ps=500" > sonar_issues.json
-        fi
+        curl -s -u $SONAR_TOKEN: "$SONAR_API_URL/api/issues/search?componentKeys=${PROJECT_KEY}&resolved=no&ps=500" > sonar_issues.json
 
         total=$(jq -r '.total' sonar_issues.json)
 
@@ -128,11 +200,7 @@ jobs:
           echo "Quality Gate Check failed!"
           echo ""
           echo "Quality Gate exception list:"
-          if [ "${{ inputs.RUNNER_LABEL }}" = "" ]; then
-            conditions_json=$(curl -s -u $SONAR_TOKEN: "http://sonar:9000/api/qualitygates/project_status?projectKey=$PROJECT_KEY")
-          else
-            conditions_json=$(curl -s -u $SONAR_TOKEN: "https://${{ vars.SONAR_DOMAIN_NAME }}/api/qualitygates/project_status?projectKey=$PROJECT_KEY")
-          fi
+          conditions_json=$(curl -s -u $SONAR_TOKEN: "$SONAR_API_URL/api/qualitygates/project_status?projectKey=$PROJECT_KEY")
 
           echo "### Quality Gate Check failed!" >> $GITHUB_STEP_SUMMARY
           echo "#### Quality Gate exception list::" >> $GITHUB_STEP_SUMMARY

@@ -39,7 +39,7 @@ jobs:
       run: |
         # Install git-lfs
         /opt/homebrew/bin/git-lfs install
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@main
       with:
         fetch-depth: ${{ inputs.FETCH_DEPTH }}
         lfs: true
@@ -86,7 +86,7 @@ jobs:
     - name: SonarQube Quality Gate check
       id: sonarqube-quality-gate-check
       continue-on-error: true
-      uses: sonarsource/sonarqube-quality-gate-action@v1.1.0
+      uses: sonarsource/sonarqube-quality-gate-action@master
       timeout-minutes: 5
       env:
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
