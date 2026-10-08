@@ -27,7 +27,7 @@ on:
       NODE_VERSION:
           description: 'Node version for npm install / eslint (example: 20.12.2). Self-hosted runners have no Node.js preinstalled.'
           required: false
-          default: '20'
+          default: '22'
           type: string
       RUNNER_LABEL:
           description: 'Label of a runner to use self-host or not latest'
