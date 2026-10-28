@@ -89,19 +89,61 @@ jobs:
         } >> "$GITHUB_OUTPUT"
 
 
+    - name: Check for preinstalled Python
+      id: python
+      shell: bash
+      env:
+        WANTED_VERSION: ${{ inputs.PYTHON_VERSION }}
+      run: |
+        set -euo pipefail
+        # Runner images may already ship the wanted Python; skip setup-python then.
+        for bin in "python${WANTED_VERSION}" python3 python; do
+          path="$(command -v "$bin" 2>/dev/null)" || continue
+          version="$("$path" -c 'import platform; print(platform.python_version())' 2>/dev/null)" || continue
+          # It also needs Poetry, or pip to install Poetry with.
+          if ! command -v poetry > /dev/null 2>&1 && ! "$path" -m pip --version > /dev/null 2>&1; then
+            continue
+          fi
+          if [ "$version" = "$WANTED_VERSION" ] || [[ "$version" == "$WANTED_VERSION".* ]]; then
+            echo "Python $version is already installed: $path"
+            # Later steps call python/python3; wrappers rather than symlinks,
+            # because a symlinked venv interpreter loses its venv.
+            mkdir -p "$RUNNER_TEMP/python-bin"
+            for name in python python3; do
+              printf '#!/bin/sh\nexec "%s" "$@"\n' "$path" > "$RUNNER_TEMP/python-bin/$name"
+              chmod +x "$RUNNER_TEMP/python-bin/$name"
+            done
+            echo "$RUNNER_TEMP/python-bin" >> "$GITHUB_PATH"
+            echo "preinstalled=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+        done
+        echo "preinstalled=false" >> "$GITHUB_OUTPUT"
+
     - name: Set up Python
+      if: ${{ steps.python.outputs.preinstalled != 'true' }}
       uses: actions/setup-python@main
       with:
         python-version: ${{ inputs.PYTHON_VERSION }}
 
     - name: Install poetry
       if: ${{ inputs.RUN_FLAKE8 }}
+      env:
+        # A preinstalled system Python may be marked externally managed (PEP 668).
+        PIP_BREAK_SYSTEM_PACKAGES: ${{ steps.python.outputs.preinstalled == 'true' && '1' || '0' }}
       run: |
         if command -v poetry >/dev/null 2>&1; then
           echo "poetry already present: $(poetry --version)"
         else
           python3 -m pip install --upgrade pip
-          pip install poetry
+          python3 -m pip install poetry
+          # pip installs into the interpreter's scripts dir, or into the user
+          # site when it can't write there (a system Python); put both on PATH.
+          for scheme in "" posix_user; do
+            bin_dir="$(python3 -c 'import sys, sysconfig; print(sysconfig.get_path("scripts", *sys.argv[1:]))' $scheme)"
+            export PATH="$bin_dir:$PATH"
+            echo "$bin_dir" >> "$GITHUB_PATH"
+          done
         fi
 
     - name: Install poetry project dependencies

@@ -102,10 +102,30 @@ jobs:
       run: |
         printf "\nsonar.projectKey = ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.head_ref || github.ref_name }}" | sed s/'\/'/'-'/g >> sonar-project.properties
 
+    - name: Check for preinstalled Node.js
+      id: node
+      shell: bash
+      env:
+        WANTED_VERSION: ${{ inputs.NODE_VERSION }}
+      run: |
+        # Runner images may already ship the wanted Node.js; skip setup-node then.
+        version="$(node --version 2>/dev/null || true)"
+        version="${version#v}"
+        wanted="${WANTED_VERSION#v}"
+        if [ -n "$version" ] && { [ "$version" = "$wanted" ] || [[ "$version" == "$wanted".* ]]; }; then
+          echo "Node.js $version is already installed: $(command -v node)"
+          echo "preinstalled=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "preinstalled=false" >> "$GITHUB_OUTPUT"
+        fi
+
     - name: Use Node.js
+      if: ${{ steps.node.outputs.preinstalled != 'true' }}
       uses: actions/setup-node@main
       with:
         node-version: ${{ inputs.NODE_VERSION }}
+        # setup-node v5+ caches npm automatically (Actions storage); keep it off.
+        package-manager-cache: false
 
     - name: Enable Corepack
       if: ${{ inputs.ENABLE_COREPACK }}
