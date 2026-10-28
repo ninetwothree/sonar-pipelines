@@ -106,6 +106,8 @@ jobs:
       uses: actions/setup-node@main
       with:
         node-version: ${{ inputs.NODE_VERSION }}
+        # setup-node v5+ caches npm automatically (Actions storage); keep it off.
+        package-manager-cache: false
 
     - name: Enable Corepack
       if: ${{ inputs.ENABLE_COREPACK }}
