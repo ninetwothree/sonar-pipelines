@@ -89,7 +89,29 @@ jobs:
         } >> "$GITHUB_OUTPUT"
 
 
+    - name: Check for preinstalled JDK
+      id: java
+      shell: bash
+      env:
+        WANTED_VERSION: ${{ inputs.JAVA_VERSION }}
+      run: |
+        # Runner images may already ship the wanted JDK; skip setup-java then.
+        java_bin="${JAVA_HOME:+$JAVA_HOME/bin/}java"
+        version="$("$java_bin" -XshowSettings:properties -version 2>&1 | sed -n 's/^ *java\.version = //p' || true)"
+        if [ -n "$version" ] && command -v javac > /dev/null 2>&1 && { [ "$version" = "$WANTED_VERSION" ] || [[ "$version" == "$WANTED_VERSION".* ]]; }; then
+          echo "JDK $version is already installed: $(command -v "$java_bin")"
+          # Gradle and the Sonar scanner look for JAVA_HOME.
+          if [ -z "${JAVA_HOME:-}" ]; then
+            java_home="$(dirname "$(dirname "$(readlink -f "$(command -v java)")")")"
+            echo "JAVA_HOME=$java_home" >> "$GITHUB_ENV"
+          fi
+          echo "preinstalled=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "preinstalled=false" >> "$GITHUB_OUTPUT"
+        fi
+
     - name: Set up JDK
+      if: ${{ steps.java.outputs.preinstalled != 'true' }}
       uses: actions/setup-java@main
       with:
         java-version:  ${{ inputs.JAVA_VERSION }}
